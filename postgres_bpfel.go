@@ -12,6 +12,48 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type postgresL7Event struct {
+	Fd                  uint64
+	WriteTimeNs         uint64
+	Pid                 uint32
+	Status              uint32
+	Duration            uint64
+	Protocol            uint8
+	Method              uint8
+	Padding             uint16
+	Payload             [1024]uint8
+	PayloadSize         uint32
+	PayloadReadComplete uint8
+	Failed              uint8
+	IsTls               uint8
+	_                   [1]byte
+	Seq                 uint32
+	Tid                 uint32
+	_                   [4]byte
+}
+
+type postgresL7Request struct {
+	WriteTimeNs         uint64
+	Protocol            uint8
+	Method              uint8
+	Payload             [1024]uint8
+	_                   [2]byte
+	PayloadSize         uint32
+	PayloadReadComplete uint8
+	RequestType         uint8
+	_                   [2]byte
+	Seq                 uint32
+	Tid                 uint32
+	_                   [4]byte
+}
+
+type postgresSocketKey struct {
+	Fd    uint64
+	Pid   uint32
+	IsTls uint8
+	_     [3]byte
+}
+
 // loadPostgres returns the embedded CollectionSpec for postgres.
 func loadPostgres() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_PostgresBytes)
@@ -53,13 +95,20 @@ type postgresSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type postgresProgramSpecs struct {
-	HandleWrite *ebpf.ProgramSpec `ebpf:"handle_write"`
+	HandleRead     *ebpf.ProgramSpec `ebpf:"handle_read"`
+	HandleReadExit *ebpf.ProgramSpec `ebpf:"handle_read_exit"`
+	HandleWrite    *ebpf.ProgramSpec `ebpf:"handle_write"`
 }
 
 // postgresMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type postgresMapSpecs struct {
+	ActiveL7Requests *ebpf.MapSpec `ebpf:"active_l7_requests"`
+	ActiveReads      *ebpf.MapSpec `ebpf:"active_reads"`
+	L7EventHeap      *ebpf.MapSpec `ebpf:"l7_event_heap"`
+	L7Events         *ebpf.MapSpec `ebpf:"l7_events"`
+	L7RequestHeap    *ebpf.MapSpec `ebpf:"l7_request_heap"`
 }
 
 // postgresObjects contains all objects after they have been loaded into the kernel.
@@ -81,21 +130,36 @@ func (o *postgresObjects) Close() error {
 //
 // It can be passed to loadPostgresObjects or ebpf.CollectionSpec.LoadAndAssign.
 type postgresMaps struct {
+	ActiveL7Requests *ebpf.Map `ebpf:"active_l7_requests"`
+	ActiveReads      *ebpf.Map `ebpf:"active_reads"`
+	L7EventHeap      *ebpf.Map `ebpf:"l7_event_heap"`
+	L7Events         *ebpf.Map `ebpf:"l7_events"`
+	L7RequestHeap    *ebpf.Map `ebpf:"l7_request_heap"`
 }
 
 func (m *postgresMaps) Close() error {
-	return _PostgresClose()
+	return _PostgresClose(
+		m.ActiveL7Requests,
+		m.ActiveReads,
+		m.L7EventHeap,
+		m.L7Events,
+		m.L7RequestHeap,
+	)
 }
 
 // postgresPrograms contains all programs after they have been loaded into the kernel.
 //
 // It can be passed to loadPostgresObjects or ebpf.CollectionSpec.LoadAndAssign.
 type postgresPrograms struct {
-	HandleWrite *ebpf.Program `ebpf:"handle_write"`
+	HandleRead     *ebpf.Program `ebpf:"handle_read"`
+	HandleReadExit *ebpf.Program `ebpf:"handle_read_exit"`
+	HandleWrite    *ebpf.Program `ebpf:"handle_write"`
 }
 
 func (p *postgresPrograms) Close() error {
 	return _PostgresClose(
+		p.HandleRead,
+		p.HandleReadExit,
 		p.HandleWrite,
 	)
 }
