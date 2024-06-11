@@ -93,6 +93,7 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
     len = bpf_htonl(len);
 
     if (identifier == POSTGRES_MESSAGE_TERMINATE && len == 4) {
+        bpf_printk("Terminate\n");
         *request_type = identifier;
         return 1;
     }
@@ -104,6 +105,7 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
     // Simple Query Protocol
     if (identifier == POSTGRES_MESSAGE_SIMPLE_QUERY) {
         *request_type = identifier;
+        bpf_printk("Simple Query\n");
         return 1;
     }
 
@@ -118,6 +120,7 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
             return 0;
         }
         if (sync[0] == 'S' && sync[1] == 0 && sync[2] == 0 && sync[3] == 0 && sync[4] == 4) {
+            bpf_printk("Parse/Bind\n");
             *request_type = identifier;
             return 1;
         }
@@ -138,13 +141,14 @@ int process_enter_of_syscalls_write(void* ctx, __u64 fd, __u8 is_tls, char* buf,
     req.write_time_ns = timestamp;
 
     if (buf) {
-        parse_client_postgres_data(buf, count, &req.request_type);
+        if (parse_client_postgres_data(buf, count, &req.request_type)) {
+            bpf_printk("request_type: %c\n", req.request_type);
+            __u64 id = bpf_get_current_pid_tgid();
+            __u32 pid = id >> 32;
+            bpf_printk("pid: %d\n", pid);
+        }
     }
 
-    if (req.request_type != 0) {
-        bpf_printk("request_type: %d\n", req.request_type);
-    }
-    
     return 0;
 }
 
