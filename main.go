@@ -2,13 +2,19 @@ package main
 
 import (
 	"os"
+	"regexp"
+	"strings"
 	"log"
+	"fmt"
 	"unsafe"
-	"time"
+	"bytes"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 )
+
+var re *regexp.Regexp
+var keywords = []string{"SELECT", "INSERT INTO", "UPDATE", "DELETE FROM", "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "CREATE INDEX", "DROP INDEX", "CREATE VIEW", "DROP VIEW", "GRANT", "REVOKE", "EXECUTE"}
 
 const (
 	BPF_L7_PROTOCOL_UNKNOWN = iota
@@ -64,6 +70,91 @@ func (e L7ProtocolConversion) String() string {
 	}
 }
 
+func getKey(pid uint32, fd uint64, stmtName string) string {
+	return fmt.Sprintf("%d-%d-%s", pid, fd, stmtName)
+}
+
+// Check if a string contains SQL keywords
+func containsSQLKeywords(input string) bool {
+	return re.MatchString(strings.ToUpper(input))
+}
+
+func parseSqlCommand(d *bpfL7Event, pgStatements *map[string]string) (string, error) {
+	r := d.Payload[:d.PayloadSize]
+	var sqlCommand string
+	if PostgresMethodConversion(d.Method).String() == SIMPLE_QUERY {
+		// Q, 4 bytes of length, sql command
+
+		// skip Q, (simple query)
+		r = r[1:]
+
+		// skip 4 bytes of length
+		r = r[4:]
+
+		// get sql command
+		sqlCommand = string(r)
+
+		// garbage data can come for postgres, we need to filter out
+		// search statement for sql keywords like
+		if !containsSQLKeywords(sqlCommand) {
+			return "", fmt.Errorf("no sql command found")
+		}
+	} else if PostgresMethodConversion(d.Method).String() == EXTENDED_QUERY { // prepared statement
+		// Parse or Bind message
+		id := r[0]
+		switch id {
+		case 'P':
+			// 1 byte P
+			// 4 bytes len
+			// prepared statement name(str) (null terminated)
+			// query(str) (null terminated)
+			// parameters
+			var stmtName string
+			var query string
+			vars := bytes.Split(r[5:], []byte{0})
+			if len(vars) >= 3 {
+				stmtName = string(vars[0])
+				query = string(vars[1])
+			} else if len(vars) == 2 { // query too long for our buffer
+				stmtName = string(vars[0])
+				query = string(vars[1]) + "..."
+			} else {
+				return "", fmt.Errorf("could not parse 'parse' frame for postgres")
+			}
+			
+			(*pgStatements)[getKey(d.Pid, d.Fd, stmtName)] = query
+			return fmt.Sprintf("PREPARE %s AS %s", stmtName, query), nil
+		case 'B':
+			// 1 byte B
+			// 4 bytes len
+			// portal str (null terminated)
+			// prepared statement name str (null terminated)
+			// https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-BIND
+
+			var stmtName string
+			vars := bytes.Split(r[5:], []byte{0})
+			if len(vars) >= 2 {
+				stmtName = string(vars[1])
+			} else {
+				return "", fmt.Errorf("could not parse bind frame for postgres")
+			}
+
+			query, ok := (*pgStatements)[getKey(d.Pid, d.Fd, stmtName)]
+			if !ok || query == "" { // we don't have the query for the prepared statement
+				// Execute (name of prepared statement) [(parameter)]
+				return fmt.Sprintf("EXECUTE %s *values*", stmtName), nil
+			}
+			return query, nil
+		default:
+			return "", fmt.Errorf("could not parse extended query for postgres")
+		}
+	} else if PostgresMethodConversion(d.Method).String() == CLOSE_OR_TERMINATE {
+		sqlCommand = string(r)
+	}
+
+	return sqlCommand, nil
+}
+
 // Custom type for the enumeration
 type PostgresMethodConversion uint32
 
@@ -82,9 +173,9 @@ func (e PostgresMethodConversion) String() string {
 }
 
 // 0 is false, 1 is true
-func uint8ToBool(num uint8) bool {
+/* func uint8ToBool(num uint8) bool {
 	return num != 0
-}
+} */
 
 type L7Event struct {
 	Fd                  uint64
@@ -163,6 +254,9 @@ func main() {
 		log.Fatal("error creating perf event array reader")
 	}
 
+	// Case-insensitive matching
+	re = regexp.MustCompile(strings.Join(keywords, "|"))
+	pgStatements := make(map[string]string)
 
 	for {
 		var record perf.Record
@@ -184,35 +278,25 @@ func main() {
 		l7Event := (*bpfL7Event)(unsafe.Pointer(&record.RawSample[0]))
 
 		protocol := L7ProtocolConversion(l7Event.Protocol).String()
-		var method string
+/* 		var method string
 		switch protocol {
 		case L7_PROTOCOL_POSTGRES:
 			method = PostgresMethodConversion(l7Event.Method).String()
 		default:
 			method = "Unknown"
-		}
+		} */
 
 		// copy payload slice
 		payload := [1024]uint8{}
 		copy(payload[:], l7Event.Payload[:])
 
 		if (protocol == "POSTGRES") {
-			log.Printf("%d", l7Event.Fd)
-			log.Printf("%d", l7Event.Pid)
-			log.Printf("%d", l7Event.Status)
-			log.Printf("%d", l7Event.Duration)
-			log.Printf("%s", protocol)
-			log.Printf("%t", uint8ToBool(l7Event.IsTls))
-			log.Printf("%s", method)
-			log.Printf("%s", payload)
-			log.Printf("%d", l7Event.PayloadSize)
-			log.Printf("%t", uint8ToBool(l7Event.PayloadReadComplete))
-			log.Printf("%t", uint8ToBool(l7Event.Failed))
-			log.Printf("%d", l7Event.WriteTimeNs)
-			log.Printf("%d", l7Event.Tid)
-			log.Printf("%d", l7Event.Seq)
-			log.Printf("%d", time.Now().UnixMilli())
-			log.Print("--------------------------------------------------")
+			out, err := parseSqlCommand(l7Event, &pgStatements)
+			if err != nil {
+				log.Printf("Error parsing sql command: %s", err)
+			} else {
+				log.Printf("%s", out)
+			}
 		}
 	}
 }

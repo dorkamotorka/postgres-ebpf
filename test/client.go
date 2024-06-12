@@ -27,16 +27,10 @@ func main() {
     }
     defer db.Close()
 
-		// Makes a Simple Query
-    err = db.Ping()
-    if err != nil {
-        panic(err)
-    }
-
     fmt.Println("Successfully connected to the database!")
 
     // Insert data into the table
-		// This uses Extended Query Syntax (combination of Parse and Bind packets)
+	// This uses Extended Query Syntax (combination of Parse and Bind packets)
     insertSQL := `
     INSERT INTO test_table (name)
     VALUES ($1)
