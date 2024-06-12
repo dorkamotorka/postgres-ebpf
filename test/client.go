@@ -1,9 +1,8 @@
 package main
 
 import (
-	"os"
+    "fmt"
 	"database/sql"
-	"fmt"
 	_ "github.com/lib/pq"
 )
 
@@ -22,33 +21,57 @@ func main() {
 
     // Connect to the PostgreSQL database
     db, err := sql.Open("postgres", psqlInfo)
-    if err != nil {
-        panic(err)
-    }
+    CheckError(err)
     defer db.Close()
 
-    fmt.Println("Successfully connected to the database!")
+    // Create table
+    createTable := `CREATE TABLE "Students" ("id" serial primary key, "Name" TEXT, "Roll" INTEGER)`
+    _, err = db.Exec(createTable)
+    if err != nil {
+        fmt.Println(err)
+    } else {
+        fmt.Println("Students table created successfully")
+    }
 
     // Insert data into the table
-	// This uses Extended Query Syntax (combination of Parse and Bind packets)
-    insertSQL := `
-    INSERT INTO test_table (name)
-    VALUES ($1)
-    RETURNING id`
-    var id int
-    err = db.QueryRow(insertSQL, "Test Name from Go").Scan(&id)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Println("New record ID is:", id)
+    insertStmt := `INSERT INTO "Students"("Name", "Roll") VALUES('John', 1)`
+    _, err = db.Exec(insertStmt)
+    CheckError(err)
 
-    // This uses Extended Query Syntax as well (combination of Parse and Bind packets)
-    var name string
-    querySQL := `SELECT name FROM test_table WHERE id = $1`
-    err = db.QueryRow(querySQL, id).Scan(&name)
+    // Insert data into the table using dynamic SQL
+    insertDynStmt := `INSERT INTO "Students"("Name", "Roll") VALUES($1, $2)`
+    _, err = db.Exec(insertDynStmt, "Jane", 2)
+    CheckError(err)
+
+    // Update data in the table
+    updateStmt := `UPDATE "Students" SET "Name"=$1, "Roll"=$2 WHERE "id"=$3`
+    _, err = db.Exec(updateStmt, "Mary", 3, 2)
+    CheckError(err)
+
+    // Delete data from the table
+    deleteStmt := `DELETE FROM "Students" WHERE id=$1`
+    _, err = db.Exec(deleteStmt, 1)
+    CheckError(err)
+
+    rows, err := db.Query(`SELECT "Name", "Roll" FROM "Students"`)
+    CheckError(err)
+     
+    defer rows.Close()
+    for rows.Next() {
+        var name string
+        var roll int
+     
+        err = rows.Scan(&name, &roll)
+        CheckError(err)
+     
+        fmt.Println(name, roll)
+    }
+     
+    CheckError(err)
+}
+
+func CheckError(err error) {
     if err != nil {
         panic(err)
     }
-    fmt.Printf("Queried name from the database: %s\n", name)
-		fmt.Printf("Client PID is %d\n", os.Getpid())
 }

@@ -52,14 +52,6 @@ struct read_args {
     __u64 read_start_ns;  
 };
 
-struct read_enter_args {
-    __u64 id;
-    __u64 fd;
-    char* buf;
-    __u64 size;
-    __u64 time;
-};
-
 struct trace_event_raw_sys_enter_write {
 	struct trace_entry ent;
     __s32 __syscall_nr;
@@ -108,37 +100,38 @@ struct l7_event {
     __u8 payload_read_complete;
     __u8 failed;
     __u8 is_tls;
-    __u32 seq; // tcp sequence number
+    __u32 seq;
     __u32 tid;
 };
 
-// should used on client side
-// checks if the message is a postgresql Q, C, X message
+// Used on the client side
+// Checks if the message is a postgresql Q, C, X message
 static __always_inline
 int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
+    // Return immeadiately if buffer is empty
     if (buf_size < 1) {
         return 0;
     }
+
+    // Parse the first byte of the buffer
+    // This is the identifier of the PostgresQL message
     char identifier;
-    __u32 len;
     if (bpf_probe_read(&identifier, sizeof(identifier), (void *)((char *)buf)) < 0) {
         return 0;
     }
 
-    if (bpf_probe_read(&len, sizeof(len), (void *)((char *)buf+1)) < 0) {
+    // the next four bytes specify the length of the rest of the message
+    __u32 len;
+    if (bpf_probe_read(&len, sizeof(len), (void *)((char *)buf + 1)) < 0) {
         return 0;
     }
-    len = bpf_htonl(len);
 
-    if (identifier == POSTGRES_MESSAGE_TERMINATE && len == 4) {
+    // Connection termination has the Terminate identifier ("X") and the length is 4 bytes
+    if (identifier == POSTGRES_MESSAGE_TERMINATE && bpf_htonl(len) == 4) {
         bpf_printk("Client will send Terminate packet\n");
         *request_type = identifier;
         return 1;
     }
-
-    // long queries can be split into multiple packets
-    // therefore specified length can exceed the buf_size 
-    // normally (len + 1 byte of identifier  == buf_size) should be true
 
     // Simple Query Protocol
     if (identifier == POSTGRES_MESSAGE_SIMPLE_QUERY) {
@@ -147,18 +140,20 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
         return 1;
     }
 
-    // Extended Query Protocol (Prepared Statement)
-    // >P/D/S (Parse/Describe/Sync) creating a prepared statement
-    // >B/E/S (Bind/Execute/Sync) executing a prepared statement
+    // Extended Query Protocol (Prepared Statement) 
+    // > P/D/S (Parse/Describe/Sync) creating a prepared statement
+    // > B/E/S (Bind/Execute/Sync) executing a prepared statement
     if (identifier == POSTGRES_MESSAGE_PARSE || identifier == POSTGRES_MESSAGE_BIND) {
-        // For fine grained parsing check Sync message, Http2 has a similar message starting with 'P' (PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n)
-        // read last 5 bytes of the buffer
+        // Read last 5 bytes of the buffer (Sync message)
         char sync[5];
-        if (bpf_probe_read(&sync, sizeof(sync), (void *)((char *)buf+buf_size-5)) < 0) {
+        if (bpf_probe_read(&sync, sizeof(sync), (void *)((char *)buf + (buf_size - 5))) < 0) {
             return 0;
         }
+
+        // Extended query protocol messages often end with a Sync (S) message.
+        // Sync message is a 5 byte message with the first byte being 'S' and the rest indicating the length of the message, including self (4 bytes in this case - so no message body)
         if (sync[0] == 'S' && sync[1] == 0 && sync[2] == 0 && sync[3] == 0 && sync[4] == 4) {
-            bpf_printk("Client will send an extended query (Parse/Bind)\n");
+            bpf_printk("Client will send an Extended Query\n");
             *request_type = identifier;
             return 1;
         }
@@ -169,20 +164,19 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
 
 static __always_inline
 __u32 parse_postgres_server_resp(char *buf, int buf_size) {
+    // Return immeadiately if buffer is empty
+    if (buf_size < 1) {
+        return 0;
+    }
+
+    // Parse the first byte of the buffer
+    // This is the identifier of the PostgresQL message
     char identifier;
-    int len;
     if (bpf_probe_read(&identifier, sizeof(identifier), (void *)((char *)buf)) < 0) {
         return 0;
     }
-    if (bpf_probe_read(&len, sizeof(len), (void *)((char *)buf+1)) < 0) {
-        return 0;
-    }
-    len = bpf_htonl(len);
 
-    if (len+1 > buf_size) {
-        return 0;
-    }
-
+    // Identifies the message as an error.
     if (identifier == 'E') {
         return ERROR_RESPONSE;
     }
