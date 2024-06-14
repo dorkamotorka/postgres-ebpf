@@ -8,6 +8,8 @@ In order to try it out locally:
 
 - Run eBPF program using
   ```
+  go generate
+  go build
   sudo ./postgres
   ```
 - Run the PostgresQL Container using
