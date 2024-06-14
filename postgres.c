@@ -28,8 +28,6 @@ struct {
     __uint(max_entries, 10240);
 } active_reads SEC(".maps");
 
-// TODO: ask this - I think it's problematic because it is updated with the write syscall (client) and read by the read syscall (server)
-// But the server and the client are not necesarily on the same machine? How is this handled?
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 32768);

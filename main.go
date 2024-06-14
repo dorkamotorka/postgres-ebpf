@@ -67,7 +67,6 @@ func main() {
 			log.Printf("lost samples l7-event %d", record.LostSamples)
 		}
 
-		// TODO: investigate why this is happening
 		if record.RawSample == nil || len(record.RawSample) == 0 {
 			log.Print("read sample l7-event nil or empty")
 			return
