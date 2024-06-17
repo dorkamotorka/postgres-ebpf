@@ -28,7 +28,7 @@ func main() {
     createTable := `CREATE TABLE "Students" ("id" serial primary key, "Name" TEXT, "Roll" INTEGER)`
     _, err = db.Exec(createTable)
     if err != nil {
-        fmt.Println(err)
+        //fmt.Println(err)
     } else {
         fmt.Println("Students table created successfully")
     }
@@ -63,11 +63,10 @@ func main() {
      
         err = rows.Scan(&name, &roll)
         CheckError(err)
-     
-        fmt.Println(name, roll)
     }
      
     CheckError(err)
+    fmt.Println("Client finished successfully.")
 }
 
 func CheckError(err error) {
