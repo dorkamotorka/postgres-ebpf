@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 
 # Latency values in milliseconds
 operations = ['INSERT', 'UPDATE', 'DELETE', 'QUERY']
-latency_with_ebpf = [1.5487, 1.3383, 1.2542, 0.3433610]  # QUERY converted from microseconds to milliseconds
-latency_without_ebpf = [1.3566, 1.1601, 1.0735, 0.2975380]  # QUERY converted from microseconds to milliseconds
+latency_with_ebpf = [1.1720, 1.2338, 1.2062, 0.33706]  
+latency_without_ebpf = [1.1410, 1.2014, 1.1550, 0.3175] 
 
 x = range(len(operations))
 
