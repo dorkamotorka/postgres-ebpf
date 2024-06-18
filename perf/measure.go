@@ -25,10 +25,10 @@ func main() {
     CheckError(err)
     defer db.Close()
 
-		// Create table
-		createTable := `CREATE TABLE IF NOT EXISTS "Students" ("id" serial primary key, "Name" TEXT, "Roll" INTEGER)`
-		_, err = db.Exec(createTable)
-		CheckError(err)
+    // Create table
+    createTable := `CREATE TABLE IF NOT EXISTS "Students" ("id" serial primary key, "Name" TEXT, "Roll" INTEGER)`
+    _, err = db.Exec(createTable)
+    CheckError(err)
 
     const repeat = 1000
     var totalInsertTime, totalUpdateTime, totalDeleteTime, totalQueryTime time.Duration
