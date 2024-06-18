@@ -14,7 +14,7 @@ In order to try it out locally:
   ```
 - Run the PostgresQL Container using
   ```
-  docker run --name postgres-container -e POSTGRES_PASSWORD=mysecretpassword -d -p 5432:5432 postgres
+  docker run --name my-postgres-container -e POSTGRES_PASSWORD=mysecretpassword -d -p 5432:5432 --memory=4g --cpus=4 -v ./postgresql.conf:/etc/postgresql/postgresql.conf -e POSTGRES_CONFIG_FILE=/etc/postgresql/postgresql.conf postgres
   ```
 - Run client inside `/test` using 
   ```
