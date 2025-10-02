@@ -11,11 +11,10 @@ import (
 	"github.com/cilium/ebpf/perf"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go postgres postgres.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpf postgres postgres.c
 
 var re *regexp.Regexp
 var keywords = []string{"SELECT", "INSERT INTO", "UPDATE", "DELETE FROM", "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "CREATE INDEX", "DROP INDEX", "CREATE VIEW", "DROP VIEW", "GRANT", "REVOKE", "EXECUTE"}
-var pgObjs postgresObjects
 
 func main() {
 	// Allow the current process to lock memory for eBPF resources.
@@ -24,7 +23,7 @@ func main() {
 	}
 
 	// Load pre-compiled programs and maps into the kernel.
-	pgObjs = postgresObjects{}
+	var pgObjs postgresObjects
 	if err := loadPostgresObjects(&pgObjs, nil); err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +71,7 @@ func main() {
 			return
 		}
 
-		l7Event := (*bpfL7Event)(unsafe.Pointer(&record.RawSample[0]))
+		l7Event := (*postgresL7Event)(unsafe.Pointer(&record.RawSample[0]))
 
 		protocol := L7ProtocolConversion(l7Event.Protocol).String()
 
