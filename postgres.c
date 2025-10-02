@@ -79,7 +79,7 @@ int process_enter_of_syscalls_write(void* ctx, __u64 fd, char* buf, __u64 payloa
         req->payload_read_complete = 1;
     }
 
-    // Store active L7 request struct for later usage
+    // correlate client→server writes with later server reads on the same socket
     struct socket_key k = {};
     __u64 id = bpf_get_current_pid_tgid();
     k.pid = id >> 32;
@@ -98,6 +98,7 @@ int process_enter_of_syscalls_read(struct trace_event_raw_sys_enter_read *ctx) {
     __u64 id = bpf_get_current_pid_tgid();
 
     // Store an active read struct for later usage
+    // Needed to pass fd, buf and count to sys_enter_exit
     struct read_args args = {};
     args.fd = ctx->fd;
     args.buf = ctx->buf;
@@ -121,7 +122,9 @@ int process_exit_of_syscalls_read(void* ctx, __s64 ret) {
         return 0;
     }
 
-    // Retrieve the active L7 request struct from the write syscall
+    // Retrieve the socket to which the client wrote
+    // We can afford that since this eBPF program is meant for single-node environments
+    // Where of our interest are only the clients on current node that write to the PostgreSQL running on the same node 
     struct socket_key k = {};
     k.pid = pid;
     k.fd = read_info->fd;

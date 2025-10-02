@@ -1,17 +1,17 @@
 package main
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpf postgres postgres.c
+
 import (
 	"os"
 	"log"
 	"unsafe"
-	"regexp"
 	"strings"
+	"regexp"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 )
-
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpf postgres postgres.c
 
 var re *regexp.Regexp
 var keywords = []string{"SELECT", "INSERT INTO", "UPDATE", "DELETE FROM", "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "CREATE INDEX", "DROP INDEX", "CREATE VIEW", "DROP VIEW", "GRANT", "REVOKE", "EXECUTE"}
