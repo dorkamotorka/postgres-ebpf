@@ -5,9 +5,11 @@ package main
 import (
 	"os"
 	"log"
+	"fmt"
 	"unsafe"
 	"strings"
 	"regexp"
+	"encoding/json"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -81,10 +83,29 @@ func main() {
 
 		if (protocol == "POSTGRES") {
 			out, err := parseSqlCommand(l7Event, &pgStatements)
-			if err != nil {
+			if (err != nil) {
 				log.Printf("Error parsing sql command: %s", err)
-			} else {
-				log.Printf("%s", out)
+			} else if (out != "") {
+				event := struct {
+				    Fd                  uint64 `json:"Fd"`
+				    Pid                 uint32 `json:"Pid"`
+				    Protocol            string `json:"Protocol"`
+				    PayloadSize         uint32 `json:"PayloadSize"`
+				    PayloadReadComplete uint8  `json:"PayloadReadComplete"`
+				    RequestType         uint8  `json:"RequestType"`
+				    Payload             string `json:"Payload"`
+				}{
+				    Fd:                  l7Event.Fd,
+				    Pid:                 l7Event.Pid,
+				    Protocol:            protocol,
+				    PayloadSize:         l7Event.PayloadSize,
+				    PayloadReadComplete: l7Event.PayloadReadComplete,
+				    RequestType:         l7Event.RequestType,
+				    Payload:             out,
+				}
+
+				b, _ := json.MarshalIndent(event, "", "  ")
+				fmt.Printf("%s\n", b)
 			}
 		}
 	}

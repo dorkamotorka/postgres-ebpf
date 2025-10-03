@@ -17,46 +17,39 @@ const (
 	L7_PROTOCOL_UNKNOWN  = "UNKNOWN"
 )
 
-// Order is important
+// for postgres, user space nice printing
 const (
-	BPF_POSTGRES_METHOD_UNKNOWN = iota
-	BPF_POSTGRES_METHOD_STATEMENT_CLOSE_OR_CONN_TERMINATE
-	BPF_POSTGRES_METHOD_SIMPLE_QUERY
-	BPF_POSTGRES_METHOD_EXTENDED_QUERY
+	SIMPLE_QUERY   = "SIMPLE_QUERY"
+	EXTENDED_QUERY = "EXTENDED_QUERY"
 )
-
-// for postgres, user space
 const (
-	CLOSE_OR_TERMINATE = "CLOSE_OR_TERMINATE"
-	SIMPLE_QUERY       = "SIMPLE_QUERY"
-	EXTENDED_QUERY     = "EXTENDED_QUERY"
+	POSTGRES_MESSAGE_SIMPLE_QUERY = "SIMPLE_QUERY"
+	POSTGRES_MESSAGE_PARSE        = "EXTENDED_QUERY"
+	POSTGRES_MESSAGE_BIND         = "EXTENDED_QUERY"
 )
 
 // Custom types for the enumeration
 type L7ProtocolConversion uint32
-type PostgresMethodConversion uint32
 
 // String representation of the enumeration values
 func (e L7ProtocolConversion) String() string {
 	switch e {
 	case BPF_L7_PROTOCOL_POSTGRES:
 		return L7_PROTOCOL_POSTGRES
-	case BPF_L7_PROTOCOL_UNKNOWN:
-		return L7_PROTOCOL_UNKNOWN
 	default:
-		return "Unknown"
+		return L7_PROTOCOL_UNKNOWN
 	}
 }
 
 // String representation of the enumeration values
-func (e PostgresMethodConversion) String() string {
-	switch e {
-	case BPF_POSTGRES_METHOD_STATEMENT_CLOSE_OR_CONN_TERMINATE:
-		return CLOSE_OR_TERMINATE
-	case BPF_POSTGRES_METHOD_SIMPLE_QUERY:
-		return SIMPLE_QUERY
-	case BPF_POSTGRES_METHOD_EXTENDED_QUERY:
-		return EXTENDED_QUERY
+func PostgresRequestConversion(requestType string) string {
+	switch requestType {
+	case "Q":
+		return POSTGRES_MESSAGE_SIMPLE_QUERY
+	case "P":
+		return POSTGRES_MESSAGE_PARSE
+	case "B":
+		return POSTGRES_MESSAGE_BIND
 	default:
 		return "Unknown"
 	}
@@ -74,23 +67,24 @@ func containsSQLKeywords(input string) bool {
 func parseSqlCommand(d *postgresL7Event, pgStatements *map[string]string) (string, error) {
 	r := d.Payload[:d.PayloadSize]
 	var sqlCommand string
-	if PostgresMethodConversion(d.Method).String() == SIMPLE_QUERY {
+	requestType := PostgresRequestConversion(string(d.RequestType))
+	if (requestType == SIMPLE_QUERY) {
 		// SIMPLE_QUERY -> Q, 4 bytes of length, SQL command
 		// Skip Q, (simple query)
 		r = r[1:]
 
-		// Skip 4 bytes of length
+		// Skip 4 bytes of length field
 		r = r[4:]
 
 		// Get sql command
 		sqlCommand = string(r)
 
-		// Garbage data can come for Postgres, we need to filter out
+		// Garbage data can come for Postgres that we need to filter out
 		// Search statement inside SQL keywords
 		if !containsSQLKeywords(sqlCommand) {
-			return "", fmt.Errorf("no sql command found")
+			return "", nil
 		}
-	} else if PostgresMethodConversion(d.Method).String() == EXTENDED_QUERY {
+	} else if (requestType == EXTENDED_QUERY) {
 		id := r[0]
 		switch id {
 		case 'P':
@@ -129,8 +123,6 @@ func parseSqlCommand(d *postgresL7Event, pgStatements *map[string]string) (strin
 		default:
 			return "", fmt.Errorf("could not parse extended query for postgres")
 		}
-	} else if PostgresMethodConversion(d.Method).String() == CLOSE_OR_TERMINATE {
-		sqlCommand = string(r)
 	}
 
 	return sqlCommand, nil
