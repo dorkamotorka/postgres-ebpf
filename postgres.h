@@ -48,7 +48,7 @@ struct l7_event {
 // Checks if the message is a postgresql Q, C, X message
 static __always_inline
 int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
-    // Return immeadiately if buffer is empty
+    // Return immediately if buffer is empty
     if (buf_size < 1) {
         return 0;
     }
@@ -73,7 +73,7 @@ int parse_client_postgres_data(char *buf, int buf_size, __u8 *request_type) {
         return 1;
     }
 
-    // Extended Query Protocol (Prepared Statement) 
+    // Extended Query Protocol (Prepared Statement)
     // > P/D/S (Parse/Describe/Sync) creating a prepared statement
     // > B/E/S (Bind/Execute/Sync) executing a prepared statement
     if (identifier == POSTGRES_MESSAGE_PARSE || identifier == POSTGRES_MESSAGE_BIND) {
